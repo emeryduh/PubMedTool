@@ -9,14 +9,22 @@ on various factors such as background processes, environment, operating system,
 hardware, and antimalware/antivirus protection measures.
 */
 
-//const http = require('http');
 const fs = require('fs');
-//const moment = require('moment');
 const request = require('request');
 const XmlStream = require('xml-stream');
 
 // JSON files
 const vars = require('./vars.json');
+
+// Default values for requests
+const base_url = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed';
+var options = {
+  uri: base_url,
+  method: 'POST',
+  timeout: 10000,
+  followRedirect: true,
+  maxRedirects: 10
+};
 
 console.log('Starting...\n');
 
@@ -42,20 +50,14 @@ if (cluster.isMaster) {
 }
 */
 
-// Default values for requests
-const base_url = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed';
-var options = {
-  uri: base_url,
-  method: 'POST',
-  timeout: 10000,
-  followRedirect: true,
-  maxRedirects: 10
-};
-
 // Where it all begins...
 // Begin by parsing the XML
 var stream = fs.createReadStream('data/4020a1-datasets');
 var xml = new XmlStream(stream);
+
+// Create a queue to store our titles and ids
+var titleQueue = [];
+var idQueue = [];
 
 // Extract only the article titles
 xml.preserve('ArticleTitle', true);
@@ -64,17 +66,29 @@ xml.preserve('ArticleTitle', true);
 xml.collect('subitem');
 
 // Output it once we've found the closing title tag
-// Grab the '$text' snowflake from the array
+// Grab the '$text' subitem from the array
 xml.on('endElement: ArticleTitle', (item) => {
-  console.log(item['$text']);
+  // Push each new ArticleTitle found to the back of the queue
+  titleQueue.push(item['$text']);
 });
 
 /*
-Now that all XML information has been gather we can move onto requesting the IDs
+Now that all XML information has been gathered we can move onto requesting the IDs
 from the PubMed server.
 */
-/*
+// Grab the next item from the front of the queue
+var title = titleQueue.shift();
+//options.uri = base_url + "&term=" + title + "[title]";
+
+// This method of string concatenation will perform faster when needing to execute thousands of times
+var temp = [];
+temp.push(base_url);
+temp.push("&term=");
+temp.push(title);
+temp.push("[title]");
+options.uri = temp.join('');
+
 request(options, (error, response, body) => {
-  logger.info(body);
+  // The body will contain the returned XML.  Parse it to get the ID
+  console.log(body);
 });
-*/

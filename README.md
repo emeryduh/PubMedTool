@@ -1,6 +1,8 @@
 # Installation
 Install [Node.js](https://nodejs.org/en/)
+
 Navigate to the project directory and run `npm install`
+
 Run `node index.js`
 
 # Common Problems
