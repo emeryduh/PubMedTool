@@ -10,8 +10,9 @@ hardware, antimalware/antivirus protection measures, and server load of the remo
 server.
 
 However, the main bottleneck for this program will always be the rate at which
-PubMed server requests can be made.  Changing the variable 'r' below to a
-higher number will give out requests much more quickly.
+PubMed server requests can be made.  This limit is not necessarily caused by the
+server load, rather it is a limit set by PubMed themselves.  Changing the
+variable 'r' below to a higher number will send out requests faster.
 
 MULTI-THREAD THOUGHTS
 ==================
@@ -47,7 +48,7 @@ const vars = require('./vars.json');
 
 // Default values for requests
 const base_url = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&field=title';
-var options = {
+let options = {
   uri: base_url,
   method: 'POST',
   timeout: 10000,
@@ -98,7 +99,7 @@ const readFile = () => {
       titleQueue.push(item['$text']);
     });
 
-    // When the EOF has been reached, output the size
+    // When the EOF has been reached, resolve
     xml.on('end', () => {
       resolve("Read complete!");
     });
@@ -115,7 +116,6 @@ const sendNextRequest = () => {
   return new Promise((resolve, reject) => {
     // Grab the next item from the front of the queue
     let title = titleQueue.shift();
-    //options.uri = base_url + "&term=" + title + "[title]";
 
     if (title) {
       // This method of string concatenation will perform faster when needing to execute thousands of times
@@ -123,7 +123,6 @@ const sendNextRequest = () => {
       temp.push(base_url);
       temp.push("&term=");
       temp.push(title);
-      //temp.push("[title]");
       options.uri = temp.join('');
 
       request(options, (error, response, body) => {
@@ -192,7 +191,6 @@ const updateXML = (data) => {
   });
 }
 
-
 // Setup environment for multicore processing
 // Exit operations
 const clusterExitOp = (clsReader, clsRequests, clsXmlParser, clsWriter) => {
@@ -234,24 +232,21 @@ if (cluster.isMaster) {
 
   /**
   These message handlers are only evaluated when a process.send() is called within
-  it's own context.  That is process.send() is called within clsReader then clsRead.on()
-  will handle it.
+  it's own context.  That is, if process.send() is called within clsReader then
+  clsReader.on('message', ...) will handle it.
   */
   clsReader.on('message', (data) => {
-    //console.log('[Reader] Data updated from the reader, passing to Requests...', data.length);
     titleQueue = titleQueue.concat(data);
     console.log('[Reader] Size:', titleQueue.length);
     clsRequests.send({'mode': 0, 'queue': data});
   });
 
   clsRequests.on('message', (data) => {
-    //console.log('[Requests] Data received, passing to XmlParser...');
     parseQueue = parseQueue.concat(data);
     clsXmlParser.send(data)
   });
 
   clsXmlParser.on('message', (data) => {
-    //console.log('[XmlParser] Data received, passing to Writer');
     outputQueue = outputQueue.concat(data);
     clsWriter.send(data);
   });
@@ -264,23 +259,6 @@ if (cluster.isMaster) {
       cluster.workers[id].kill();
     }
   });
-
-  // Master Exit operations
-  /*cluster.on('exit', (worker, code, signal) => {
-    console.warn('Worker crashed!');
-    console.log('Code: ', code);
-    console.log('Signal: ', signal);
-
-    if(worker === 'clsReader') {
-      //clsReader = cluster.fork({WorkerName: 'clsReader'});
-    } else if (worker === 'clsRequests') {
-      //clsRequests = cluster.fork({WorkerName: 'clsRequests'});
-    } else if (worker === 'clsXmlParser') {
-      //clsXmlParser = cluster.fork({WorkerName: 'clsXmlParser'});
-    } else if (worker === 'clsWriter') {
-      //clsWriter = cluster.fork({WorkerName: 'clsWriter'});
-    }
-  });*/
 }
 else if (process.env.WorkerName == "clsReader") {
   console.log('[Reader] Started\n');
@@ -320,10 +298,6 @@ else if (process.env.WorkerName == "clsRequests") {
     if(titleQueue.length > 0) {
       // Returns data.title and data.body
       sendNextRequest().then((data) => {
-        //console.log("Received response from server!");
-        //console.log(data.title);
-        //console.log(data.body);
-
         parseQueue.push(data);
       }).catch((err) => {
         console.log("Issue requesting data from server...");
@@ -367,7 +341,6 @@ else if (process.env.WorkerName == "clsXmlParser") {
       });
     }
   }, 1000);
-
 
   // Take in new data that is sent from workers
   process.on('message', async (data) => {
